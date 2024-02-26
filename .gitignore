@@ -1,0 +1,10 @@
+/.env
+/dnc_sales_pagarme_payables.feather
+/dnc_sales_pagarme_sales.feather
+/dnc_sales_pagarme_transactions.feather
+/faturamento_pagarme_payables.feather
+/faturamento_pagarme_sales.feather
+/faturamento_pagarme_transactions.feather
+/pagarme_payables.feather
+/pagarme_sales.feather
+/pagarme_transactions.feather
