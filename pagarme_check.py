@@ -30,7 +30,7 @@ def db_bulk_load():
     payables = db_load("SELECT * FROM pagarme_payables")
     transactions = db_load("SELECT * FROM pagarme_transactions")
     if os.environ.get("DATABASE_NAME") == 'dnc_sales':
-        sales = db_load("SELECT * from pagarme_sales WHERE gateway_name = 'pagarme'")
+        sales = db_load("SELECT * from pagarme_sales_corrigido WHERE gateway_name = 'Pagarme'")
     else:
         sales = db_load("SELECT * from sales WHERE gateway_name = 'pagarme'")
     return payables, transactions, sales
@@ -179,6 +179,31 @@ def check_payables_refund_reversal(df_p, df_s):
     return invalid_refund_reversal_sum
 
 
+def check_sum_by_month(df):
+    df['data_caixa'] = pd.to_datetime(df['recebimento_financiamento'])
+    df['Parcela'] = df['gateway_id'].str.split("-").str[0]
+    df['Id da transação'] = df['gateway_id'].str.split("-").str[1]
+    df['Parcela'].replace(r'\b0\b', '1', regex=True, inplace=True)
+    df = df[df['data_caixa'] > pd.to_datetime('2023-01-01')]
+
+    df_extrato = pd.read_excel('pagarme_extrato.xlsx', engine='openpyxl')
+    df_extrato['data_caixa'] = pd.to_datetime(df_extrato['Data da operação'], format='%d/%m/%Y %H:%M')
+    df_extrato['Id da transação'] = df_extrato['Id da transação'].astype(str)
+    df_extrato['Parcela'].replace({'-': '1'}, inplace=True)
+
+    df_compare = df.merge(df_extrato, on=['Id da transação', 'Parcela'], how='left')
+
+    df_group_sum = df.groupby(pd.Grouper(key='data_caixa', freq='ME')).agg(
+        {'valor_total_venda': 'sum', 'valor_taxa_total': 'sum', 'valor_cancelamento': 'sum', 'reembolso_taxa': 'sum',
+         'juros_atraso': 'sum'})
+    df_group_sum_interest = df_group_sum[df_group_sum.index > pd.to_datetime('2023-01-01')]
+    df_group_sum_interest['total'] = df_group_sum_interest.sum(axis=1)
+
+
+def check_according_spreadsheet(df):
+    pass
+
+
 if __name__ == '__main__':
 
     if load_from_DB:
@@ -193,6 +218,9 @@ if __name__ == '__main__':
         # Dataframe local data load
         [df_pagarme_payables, df_pagarme_transactions, df_pagarme_sales] = \
             local_df_load(["pagarme_payables", 'pagarme_transactions', 'pagarme_sales'])
+
+    # Check with extrato
+    check_sum_by_month(df_pagarme_sales)
 
     # Adjust Payables DB
     df_pagarme_payables = payables_adjust(df_pagarme_payables)
