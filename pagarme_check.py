@@ -49,6 +49,27 @@ def local_df_load(files2load):
     return df_loaded
 
 
+def local_df_load_extrato_diario():
+    import os
+    import pandas as pd
+
+    # Directory containing the Excel files
+    folder_path = './extrato_diario'
+    # List to store DataFrames
+    dfs = []
+    # Iterate over files in the folder
+    for filename in os.listdir(folder_path):
+        if filename.endswith('.csv'):
+            file_path = os.path.join(folder_path, filename)
+            # Read Excel file into DataFrame
+            df = pd.read_csv(file_path)
+            # Append DataFrame to list
+            dfs.append(df)
+    # Concatenate DataFrames vertically
+    combined_df = pd.concat(dfs, ignore_index=True)
+    return combined_df
+
+
 def payables_adjust(df):
     # Adjust Date Format
     string_format = "%Y-%m-%d"
@@ -185,13 +206,33 @@ def check_sum_by_month(df):
     df['Id da transação'] = df['gateway_id'].str.split("-").str[1]
     df['Parcela'].replace(r'\b0\b', '1', regex=True, inplace=True)
     df = df[df['data_caixa'] > pd.to_datetime('2023-01-01')]
+    df['Parcela'] = df['Parcela'].astype(str)
+    df['Id da transação'] = df['Id da transação'].astype(str)
 
-    df_extrato = pd.read_excel('pagarme_extrato.xlsx', engine='openpyxl')
-    df_extrato['data_caixa'] = pd.to_datetime(df_extrato['Data da operação'], format='%d/%m/%Y %H:%M')
-    df_extrato['Id da transação'] = df_extrato['Id da transação'].astype(str)
-    df_extrato['Parcela'].replace({'-': '1'}, inplace=True)
+    extrato_diario = True
+    if extrato_diario:
+        df_extrato = local_df_load_extrato_diario()
+        df_extrato['data_caixa'] = pd.to_datetime(df_extrato['Data de pagamento'], format='%d/%m/%Y %H:%M')
+        df_extrato['Id da transação'] = df_extrato['ID da Transação'].astype(str)
+        df_extrato['Parcela'].replace({'-': '1'}, inplace=True)
+        df_extrato['Parcela'] = df_extrato['Parcela'].astype(str)
+    else:
+        df_extrato = pd.read_excel('pagarme_extrato.xlsx', engine='openpyxl')
+        df_extrato['data_caixa'] = pd.to_datetime(df_extrato['Data da operação'], format='%d/%m/%Y %H:%M')
+        df_extrato['Id da transação'] = df_extrato['Id da transação'].astype(str)
+        df_extrato['Parcela'].replace({'-': '1'}, inplace=True)
+        df_extrato['Parcela'] = df_extrato['Parcela'].astype(str)
+        df_extrato['Tipo da operação'] = df_extrato['Tipo da operação'].astype(str)
 
-    df_compare = df.merge(df_extrato, on=['Id da transação', 'Parcela'], how='left')
+    df_transactions = pd.read_feather("faturamento_pagarme_transactions.feather")
+    df_transactions = df_transactions[['transaction_id', 'nsu']]
+    df_transactions['transaction_id'] = df_transactions['transaction_id'].astype(str)
+    df_transactions['nsu'] = df_transactions['nsu'].astype(str)
+    df_transactions['nsu'] = df_transactions['nsu'].str.split(".").str[0]
+
+    df_extrato = df_extrato.merge(df_transactions, left_on=['Id da transação'], right_on=['nsu'], how='left')
+
+    df_compare = df.merge(df_extrato, left_on=['Id da transação', 'Parcela'], right_on=['transaction_id', 'Parcela'], how='left')
 
     df_group_sum = df.groupby(pd.Grouper(key='data_caixa', freq='ME')).agg(
         {'valor_total_venda': 'sum', 'valor_taxa_total': 'sum', 'valor_cancelamento': 'sum', 'reembolso_taxa': 'sum',
